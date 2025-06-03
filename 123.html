@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>加班打卡记录系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/sheetjs/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .controls {
+            margin: 20px 0;
+            text-align: center;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        .weekend {
+            background-color: #e6f7ff;
+        }
+        .abnormal {
+            color: red;
+            font-weight: bold;
+        }
+        .long-hours {
+            background-color: #fff3cd;
+        }
+        .summary-row {
+            font-weight: bold;
+            background-color: #e7f3fe;
+        }
+        input[type="date"], input[type="time"], input[type="number"], input[type="text"] {
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>加班打卡记录系统</h1>
+        
+        <div class="controls">
+            <button id="addRow">添加新记录</button>
+            <button id="exportExcel">导出Excel</button>
+            <button id="resetTable">重置表格</button>
+            <button id="clearStorage">清除所有存储数据</button>
+        </div>
+        
+        <table id="overtimeTable">
+            <thead>
+                <tr>
+                    <th>序号</th>
+                    <th>日期</th>
+                    <th>星期</th>
+                    <th>类型</th>
+                    <th>上班时间</th>
+                    <th>下班时间</th>
+                    <th>标准工时</th>
+                    <th>工作日加班</th>
+                    <th>休息日加班</th>
+                    <th>状态</th>
+                    <th>备注</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- 数据行将通过JavaScript动态添加 -->
+            </tbody>
+            <tfoot>
+                <tr class="summary-row">
+                    <td colspan="7">总计</td>
+                    <td id="weekdayTotal">0</td>
+                    <td id="weekendTotal">0</td>
+                    <td id="statusTotal">正常</td>
+                    <td id="grandTotal" colspan="2">总加班: 0小时</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <script>
+        // 节假日数据（示例，实际使用时应该更完整）
+        const holidays = [
+            '2023-10-01', '2023-10-02', '2023-10-03',
+            '2023-10-04', '2023-10-05', '2023-10-06'
+        ];
+        
+        // 初始化表格
+        document.addEventListener('DOMContentLoaded', function() {
+            // 绑定按钮事件
+            document.getElementById('addRow').addEventListener('click', addNewRow);
+            document.getElementById('exportExcel').addEventListener('click', exportToExcel);
+            document.getElementById('resetTable').addEventListener('click', resetTable);
+            document.getElementById('clearStorage').addEventListener('click', clearStorage);
+            
+            // 加载保存的数据
+            loadSavedData();
+            
+            // 如果没有数据，添加示例数据
+            if (document.querySelectorAll('#overtimeTable tbody tr').length === 0) {
+                addSampleData();
+            }
+        });
+        
+        // 保存数据到localStorage
+        function saveDataToStorage() {
+            const rows = [];
+            document.querySelectorAll('#overtimeTable tbody tr').forEach(row => {
+                rows.push({
+                    date: row.querySelector('.date-input').value,
+                    start: row.querySelector('.start-input').value,
+                    end: row.querySelector('.end-input').value,
+                    stdHours: row.querySelector('.std-hours-input').value || 8,
+                    note: row.querySelector('.note-input').value,
+                    weekdayOT: row.querySelector('.weekday-overtime').textContent,
+                    weekendOT: row.querySelector('.weekend-overtime').textContent,
+                    status: row.querySelector('.status-cell').textContent
+                });
+            });
+            localStorage.setItem('overtimeRecords', JSON.stringify(rows));
+        }
+        
+        // 从localStorage加载数据
+        function loadSavedData() {
+            const savedData = localStorage.getItem('overtimeRecords');
+            if (savedData) {
+                const records = JSON.parse(savedData);
+                records.forEach(record => {
+                    addRowToTable(
+                        record.date, 
+                        record.start, 
+                        record.end, 
+                        record.note,
+                        record.stdHours,
+                        record.weekdayOT,
+                        record.weekendOT,
+                        record.status
+                    );
+                });
+            }
+        }
+        
+        // 添加示例数据
+        function addSampleData() {
+            const sampleData = [
+                { date: '2023-10-01', start: '09:00', end: '18:00', note: '国庆加班' },
+                { date: '2023-10-02', start: '08:30', end: '20:00', note: '项目赶工' },
+                { date: '2023-10-03', start: '08:30', end: '18:30', note: '常规加班' }
+            ];
+            
+            sampleData.forEach(data => {
+                addRowToTable(data.date, data.start, data.end, data.note);
+            });
+        }
+        
+        // 添加新行
+        function addNewRow() {
+            addRowToTable('', '', '', '');
+        }
+        
+        // 添加行到表格
+        function addRowToTable(date, start, end, note, stdHours = 8, weekdayOT = '0', weekendOT = '0', status = '正常') {
+            const tbody = document.querySelector('#overtimeTable tbody');
+            const row = document.createElement('tr');
+            const rowId = Date.now();
+            
+            row.innerHTML = `
+                <td>${tbody.children.length + 1}</td>
+                <td><input type="date" value="${date}" class="date-input" onchange="updateRow(this)"></td>
+                <td class="weekday-cell"></td>
+                <td class="day-type-cell"></td>
+                <td><input type="time" value="${start}" class="start-input" onchange="updateRow(this)"></td>
+                <td><input type="time" value="${end}" class="end-input" onchange="updateRow(this)"></td>
+                <td><input type="number" value="${stdHours}" class="std-hours-input" onchange="updateRow(this)"></td>
+                <td class="weekday-overtime">${weekdayOT}</td>
+                <td class="weekend-overtime">${weekendOT}</td>
+                <td class="status-cell">${status}</td>
+                <td><input type="text" value="${note}" class="note-input" onchange="updateRow(this)"></td>
+                <td><button onclick="deleteRow(this)">删除</button></td>
+            `;
+            
+            row.setAttribute('data-id', rowId);
+            tbody.appendChild(row);
+            
+            // 设置状态样式
+            const statusCell = row.querySelector('.status-cell');
+            if (status === '异常') {
+                statusCell.classList.add('abnormal');
+            } else {
+                statusCell.classList.remove('abnormal');
+            }
+            
+            // 如果有日期或时间，更新计算
+            if (date || (start && end)) {
+                updateRow(row.querySelector('.date-input'));
+            }
+            
+            calculateTotals();
+            saveDataToStorage();
+        }
+        
+        // 更新行计算
+        function updateRow(inputElement) {
+            const row = inputElement.closest('tr');
+            const dateInput = row.querySelector('.date-input');
+            const startInput = row.querySelector('.start-input');
+            const endInput = row.querySelector('.end-input');
+            const stdHoursInput = row.querySelector('.std-hours-input');
+            
+            // 更新星期
+            if (dateInput.value) {
+                const date = new Date(dateInput.value);
+                const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                row.querySelector('.weekday-cell').textContent = weekdays[date.getDay()];
+                
+                // 判断工作日/休息日
+                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                const isHoliday = holidays.includes(dateInput.value);
+                const dayType = isWeekend || isHoliday ? '休息日' : '工作日';
+                row.querySelector('.day-type-cell').textContent = dayType;
+                
+                // 设置周末行的样式
+                if (dayType === '休息日') {
+                    row.classList.add('weekend');
+                } else {
+                    row.classList.remove('weekend');
+                }
+            }
+            
+            // 计算加班时长
+            if (startInput.value && endInput.value) {
+                const startTime = parseTime(startInput.value);
+                const endTime = parseTime(endInput.value);
+                const stdHours = parseFloat(stdHoursInput.value) || 8;
+                
+                // 计算总工作时间（小时）
+                let totalHours = (endTime - startTime) / (1000 * 60 * 60);
+                if (totalHours < 0) totalHours += 24; // 跨午夜的情况
+                
+                // 工作日加班和休息日加班
+                const dayType = row.querySelector('.day-type-cell').textContent;
+                let weekdayOT = 0;
+                let weekendOT = 0;
+                
+                if (dayType === '工作日') {
+                    weekdayOT = Math.max(0, totalHours - stdHours);
+                    row.querySelector('.weekday-overtime').textContent = weekdayOT.toFixed(1);
+                    row.querySelector('.weekend-overtime').textContent = '0';
+                } else if (dayType === '休息日') {
+                    weekendOT = totalHours;
+                    row.querySelector('.weekend-overtime').textContent = weekendOT.toFixed(1);
+                    row.querySelector('.weekday-overtime').textContent = '0';
+                }
+                
+                // 检查异常状态
+                const statusCell = row.querySelector('.status-cell');
+                if (totalHours < 4 || totalHours > 16) {
+                    statusCell.textContent = '异常';
+                    statusCell.classList.add('abnormal');
+                } else {
+                    statusCell.textContent = '正常';
+                    statusCell.classList.remove('abnormal');
+                }
+                
+                // 标记超长加班
+                if (totalHours > 12) {
+                    row.classList.add('long-hours');
+                } else {
+                    row.classList.remove('long-hours');
+                }
+            }
+            
+            calculateTotals();
+            saveDataToStorage();
+        }
+        
+        // 删除行
+        function deleteRow(button) {
+            const row = button.closest('tr');
+            row.remove();
+            
+            // 更新序号
+            const rows = document.querySelectorAll('#overtimeTable tbody tr');
+            rows.forEach((row, index) => {
+                row.cells[0].textContent = index + 1;
+            });
+            
+            calculateTotals();
+            saveDataToStorage();
+        }
+        
+        // 计算总计
+        function calculateTotals() {
+            const weekdayCells = document.querySelectorAll('.weekday-overtime');
+            const weekendCells = document.querySelectorAll('.weekend-overtime');
+            
+            let weekdayTotal = 0;
+            let weekendTotal = 0;
+            
+            weekdayCells.forEach(cell => {
+                weekdayTotal += parseFloat(cell.textContent) || 0;
+            });
+            
+            weekendCells.forEach(cell => {
+                weekendTotal += parseFloat(cell.textContent) || 0;
+            });
+            
+            document.getElementById('weekdayTotal').textContent = weekdayTotal.toFixed(1);
+            document.getElementById('weekendTotal').textContent = weekendTotal.toFixed(1);
+            document.getElementById('grandTotal').textContent = `总加班: ${(weekdayTotal + weekendTotal).toFixed(1)}小时`;
+        }
+        
+        // 重置表格
+        function resetTable() {
+            if (confirm('确定要重置表格吗？所有数据将丢失。')) {
+                document.querySelector('#overtimeTable tbody').innerHTML = '';
+                calculateTotals();
+                saveDataToStorage();
+            }
+        }
+        
+        // 清除所有存储数据
+        function clearStorage() {
+            if (confirm('确定要清除所有存储数据吗？这将永久删除所有记录。')) {
+                localStorage.removeItem('overtimeRecords');
+                document.querySelector('#overtimeTable tbody').innerHTML = '';
+                calculateTotals();
+            }
+        }
+        
+        // 导出Excel
+        function exportToExcel() {
+            const table = document.getElementById('overtimeTable');
+            const workbook = XLSX.utils.table_to_book(table);
+            XLSX.writeFile(workbook, '加班打卡记录.xlsx');
+        }
+        
+        // 辅助函数：解析时间字符串
+        function parseTime(timeStr) {
+            if (!timeStr) return new Date();
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            const date = new Date();
+            date.setHours(hours, minutes, 0, 0);
+            return date;
+        }
+    </script>
+</body>
+</html>
